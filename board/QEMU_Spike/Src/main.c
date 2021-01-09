@@ -1,11 +1,4 @@
-/*
- * main.c
- *
- *  Created on: Sep 13, 2019
- *      Author: ace
- */
-
-#include "tos.h"
+#include "tos_k.h"
 
 #define TASK_SIZE 512
 k_task_t k_task_task1;
@@ -21,11 +14,8 @@ void task1(void *pdata)
 	{
 		t1++;
 		share++;
-		//k_tick_t delay = tos_millisec2tick(10);
-		//tos_task_delay(delay);
-		tos_task_yield();
-		//osDelay(10);
-		//asm("wfi;");
+		tos_task_delay(2);
+		//tos_task_yield();
 	}
 }
 
@@ -36,9 +26,9 @@ void task2(void *pdata)
 	{
 		t2--;
 		share--;
-		//tos_task_delay(10);
-		tos_task_yield();
-		asm("wfi;");
+		tos_task_delay(3);
+		//tos_task_yield();
+		//asm("wfi;");
 	}
 }
 

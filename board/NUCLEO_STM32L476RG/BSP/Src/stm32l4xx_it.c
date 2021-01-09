@@ -21,7 +21,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32l4xx_it.h"
-#include "tos.h"
+#include "tos_k.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 /* USER CODE END Includes */
@@ -33,7 +33,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
- 
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -63,7 +63,7 @@
 /* USER CODE END EV */
 
 /******************************************************************************/
-/*           Cortex-M4 Processor Interruption and Exception Handlers          */ 
+/*           Cortex-M4 Processor Interruption and Exception Handlers          */
 /******************************************************************************/
 /**
   * @brief This function handles Non maskable interrupt.
@@ -186,11 +186,11 @@ void SysTick_Handler(void)
 
   /* USER CODE END SysTick_IRQn 0 */
   HAL_IncTick();
-  if(tos_knl_is_running())					 //OS?a¨º??¨¹¨¢?,2??¡äDD?y3¡ê¦Ì?¦Ì¡Â?¨¨¡ä|¨¤¨ª
+  if(tos_knl_is_running())
   {
-      tos_knl_irq_enter();					//??¨¨??D??
-      tos_tick_handler();       				//¦Ì¡Â¨®?TencentOS tiny¦Ì?¨º¡À?¨®¡¤t??3¨¬D¨°               
-      tos_knl_irq_leave();       	 			//¡ä£¤¡¤¡é¨¨????D??¨¨¨ª?D??
+      tos_knl_irq_enter();
+      tos_tick_handler();
+      tos_knl_irq_leave();
   }
   /* USER CODE BEGIN SysTick_IRQn 1 */
 

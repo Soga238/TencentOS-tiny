@@ -1,7 +1,24 @@
 #include "RHF76.h"
 #include "tos_hal.h"
 
-static mcps_indication_t rhf76_mcps_indication;
+static const char RHF76_LOWPOWER_SET[] = {
+    0xFF,0xFF,0xFF,0xFF,'A','T','+','L','O','W','P','O','W','E','R','=','a','u','t','o','o','f','f','\r','\n'
+};
+
+static int rhf76_exit_low_power(void)
+{
+    int try = 0;
+    at_echo_t echo;
+
+    tos_at_echo_create(&echo, NULL, 0, "+LOWPOWER: AUTOOFF");
+    while (try++ < 10) {
+        tos_at_cmd_exec(&echo, 3000, RHF76_LOWPOWER_SET);
+        if (echo.status == AT_ECHO_STATUS_OK || echo.status == AT_ECHO_STATUS_EXPECT) {
+            return 0;
+        }
+    }
+    return -1;
+}
 
 static int rhf76_reset(void)
 {
@@ -105,13 +122,29 @@ static int rhf76_set_class(lora_class_t lora_class)
     return -1;
 }
 
+static int rhf76_set_band(void)
+{
+    int try = 0;
+    at_echo_t echo;
+
+    tos_at_echo_create(&echo, NULL, 0, RHF76_ATCMD_REPLY_BAND_CN470);
+
+    while (try++ < 10) {
+        tos_at_cmd_exec(&echo, 3000, RHF76_ATCMD_SET_BAND_CN470);
+        if (echo.status == AT_ECHO_STATUS_OK || echo.status == AT_ECHO_STATUS_EXPECT) {
+            return 0;
+        }
+    }
+    return -1;
+}
+
 static int rhf76_set_chanel(void)
 {
     int try = 0;
     at_echo_t echo;
 
     tos_at_echo_create(&echo, NULL, 0, "+CH: NUM");
-   
+
     while (try++ < 10) {
         tos_at_cmd_exec(&echo, 3000, RHF76_ATCMD_SET_CHANNEL);
         if (echo.status == AT_ECHO_STATUS_OK || echo.status == AT_ECHO_STATUS_EXPECT) {
@@ -119,6 +152,76 @@ static int rhf76_set_chanel(void)
         }
     }
     return -1;
+}
+
+int rhf76_set_repeat(uint8_t num)
+{
+    int try = 0;
+    at_echo_t echo;
+    char cmd[14] = {0};
+    char expect[10] = {'\0'};
+    snprintf(cmd, sizeof(cmd), RHF76_ATCMD_SET_REPT, num);
+    snprintf(expect, sizeof(expect), "+REPT: %d", num);
+
+    tos_at_echo_create(&echo, NULL, 0, expect);
+
+    while (try++ < 10) {
+        tos_at_cmd_exec(&echo, 3000, cmd);
+        if (echo.status == AT_ECHO_STATUS_OK || echo.status == AT_ECHO_STATUS_EXPECT) {
+            return 0;
+        }
+    }
+    return -1;
+}
+
+int rhf76_set_data_rate(uint8_t num)
+{
+    if(num>15) return -1; // num should between [0, 15]
+    int try = 0;
+    at_echo_t echo;
+    char cmd[14] = {0};
+    char expect[10] = {'\0'};
+    snprintf(cmd, sizeof(cmd), RHF76_ATCMD_SET_DATA_RATE, num);
+    snprintf(expect, sizeof(expect), " DR%d", num);
+
+    tos_at_echo_fuzzy_matching_create(&echo, NULL, 0, expect);
+
+    while (try++ < 10) {
+        tos_at_cmd_exec(&echo, 3000, cmd);
+        if (echo.status == AT_ECHO_STATUS_OK || echo.status == AT_ECHO_STATUS_EXPECT) {
+            return 0;
+        }
+    }
+    return -1;
+}
+
+int rhf76_set_delay(char *param)
+{
+    int try = 0;
+    at_echo_t echo;
+    char cmd[20] = {0};
+    char expect[20] = {'\0'};
+    snprintf(cmd, sizeof(cmd), RHF76_ATCMD_SET_DELAY, param);
+    snprintf(expect, sizeof(expect), "+DELAY %s", param);
+
+    tos_at_echo_create(&echo, NULL, 0, expect);
+
+    while (try++ < 10) {
+        tos_at_cmd_exec(&echo, 3000, cmd);
+        if(strstr(param,"?")!=NULL) return 0;
+        if (echo.status == AT_ECHO_STATUS_OK || echo.status == AT_ECHO_STATUS_EXPECT) {
+            return 0;
+        }
+    }
+    return -1;
+}
+
+int rhf76_at_cmd_exe(char *cmd)
+{
+    at_echo_t echo;
+    tos_at_echo_create(&echo, NULL, 0, NULL);
+    tos_at_cmd_exec(&echo, 8000, cmd);
+    return 0;
 }
 
 static int rhf76_set_adr_off(void)
@@ -163,10 +266,69 @@ static int rhf76_set_mode(lora_mode_t mode)
     return -1;
 }
 
-int rhf76_join(void)
+int rhf76_join_otaa(const char *deveui, const char *appkey)
 {
     int try = 0;
     at_echo_t echo;
+
+    if (rhf76_set_mode(LORA_MODE_LWOTAA) != 0) {
+        printf("rhf76 set mode FAILED\n");
+        return -1;
+    }
+
+    if (rhf76_set_id(LORA_ID_TYPE_DEVEUI, (char *)deveui) != 0) {
+        printf("rhf76 set deveui FAILED\n");
+        return -1;
+    }
+
+    if (rhf76_set_key(LORA_KEY_TYPE_APPKEY, (char *)appkey) != 0) {
+        printf("rhf76 set appkey FAILED\n");
+        return -1;
+    }
+
+    tos_stopwatch_delay_ms(2000);
+
+    tos_at_echo_create(&echo, NULL, 0, "+JOIN: Network joined");
+    while (try++ < 10) {
+        tos_at_cmd_exec(&echo, 14000, RHF76_ATCMD_JOIN);
+        if (echo.status == AT_ECHO_STATUS_OK || echo.status == AT_ECHO_STATUS_EXPECT) {
+            return 0;
+        }
+    }
+    return -1;
+}
+
+int rhf76_join_abp(const char *deveui, const char *devaddr, const char *nwkskey, const char *appskey)
+{
+    int try = 0;
+    at_echo_t echo;
+
+    if (rhf76_set_mode(LORA_MODE_LWABP) != 0) {
+        printf("rhf76 set mode FAILED\n");
+        return -1;
+    }
+
+    if (rhf76_set_id(LORA_ID_TYPE_DEVEUI, (char *)deveui) != 0) {
+        printf("rhf76 set deveui FAILED\n");
+        return -1;
+    }
+
+    if (rhf76_set_id(LORA_ID_TYPE_DEVADDR, (char *)devaddr) != 0) {
+        printf("rhf76 set devaddr FAILED\n");
+        return -1;
+    }
+
+    if (rhf76_set_key(LORA_KEY_TYPE_NWKSKEY, (char *)nwkskey) != 0) {
+        printf("rhf76 set nwkskey FAILED\n");
+        return -1;
+    }
+
+    if (rhf76_set_key(LORA_KEY_TYPE_APPSKEY, (char *)appskey) != 0) {
+        printf("rhf76 set appskey FAILED\n");
+        return -1;
+    }
+
+    tos_stopwatch_delay_ms(2000);
 
     tos_at_echo_create(&echo, NULL, 0, "+JOIN: Network joined");
     while (try++ < 10) {
@@ -180,12 +342,13 @@ int rhf76_join(void)
 
 static int rhf76_init(void)
 {
-    char *key = "2B7E151628AED2A6ABF7158809CF4F3C";
-    char *appeui = "70B3D57ED00E0017";
-
     printf("Init RHF76 LoRa ...\n" );
 
-    at_delay_ms(1000);
+    tos_stopwatch_delay_ms(1000);
+    if (rhf76_exit_low_power() != 0) {
+        printf("rhf76 reset FAILED\n");
+        return -1;
+    }
 
     if (rhf76_reset() != 0) {
         printf("rhf76 reset FAILED\n");
@@ -194,6 +357,11 @@ static int rhf76_init(void)
 
     if (rhf76_set_class(LORA_CLASS_A) != 0) {
         printf("rhf76 set class FAILED\n");
+        return -1;
+    }
+
+    if (rhf76_set_band() != 0) {
+        printf("rhf76 set band FAILED\n");
         return -1;
     }
 
@@ -207,23 +375,37 @@ static int rhf76_init(void)
         return -1;
     }
 
-    if (rhf76_set_mode(LORA_MODE_LWOTAA) != 0) {
-        printf("rhf76 set mode FAILED\n");
+    if(rhf76_set_repeat(1)!=0){
+        printf("rhf76 set repeat times for unconfirmed message FAILED\n");
         return -1;
     }
-
-    if (rhf76_set_id(LORA_ID_TYPE_APPEUI, appeui) != 0) {
-        printf("rhf76 set appeui FAILED\n");
-        return -1;
-    }
-
-    if (rhf76_set_key(LORA_KEY_TYPE_APPKEY, key) != 0) {
-        printf("rhf76 set appkey FAILED\n");
-        return -1;
-    }
-
-    at_delay_ms(3000);
+    tos_stopwatch_delay_ms(2000);
     printf("Init RHF76 LoRa done\n");
+
+    /*----------------------------------------------------*/
+    /*--- the following code is only used for debuging ---*/
+    /*----------------------------------------------------*/
+
+    /*<-- query/set UART Timeout (~TX timeout) -->*/
+    // rhf76_at_cmd_exe("AT+UART=TIMEOUT, 300\r\n");
+    // rhf76_at_cmd_exe("AT+UART=TIMEOUT\r\n");
+
+    /*<-- query current band config -->*/
+    // rhf76_at_cmd_exe("AT+DR=SCHEME\r\n");
+    // rhf76_at_cmd_exe("AT+LW=CDR\r\n");
+
+    /*<-- query current data rate and the corresponding max payload size -->*/
+    rhf76_set_data_rate(0);
+    // rhf76_at_cmd_exe("at+dr=0\r\n");
+    // rhf76_at_cmd_exe("AT+DR\r\n");
+    // rhf76_at_cmd_exe("AT+LW=LEN\r\n");
+
+    /*<-- query RX1\RX2\JRX1\JRX2 delay config -->*/
+    // rhf76_set_delay("?");
+
+    /*<-- query RF config -->*/
+    // rhf76_at_cmd_exe("AT+MODE=TEST\r\n");
+    // rhf76_at_cmd_exe("AT+TEST=?\r\n");
 
     return 0;
 }
@@ -249,8 +431,8 @@ __STATIC__ void __asciistr2hex(char *in, uint8_t *out, int len) {
     }
 }
 
-__STATIC__ char incoming_data_buffer[512]; 
-__STATIC__ uint8_t hex_stream[256];
+__STATIC__ char incoming_data_buffer[128];
+__STATIC__ uint8_t hex_stream[128];
 
 __STATIC__ void rhf76_incoming_data_process(void)
 {
@@ -269,28 +451,41 @@ __STATIC__ void rhf76_incoming_data_process(void)
             break;
         }
     }
-    
+
     ret = 0;
-    memset(incoming_data_buffer, 0x00, 512);
+
+    memset(incoming_data_buffer, 0x00, sizeof(incoming_data_buffer));
+
     while (1) {
         tos_at_uart_read(&data, 1);
         if (data == '"') {
             break;
         }
-        incoming_data_buffer[ret++] = data;
+		if(ret<128)	
+		{
+			incoming_data_buffer[ret++] = data;
+		}
+		else
+		{
+			printf(" ERR:incomming data is big ,please give more space for incoming_data_buffer\n");
+		}
+
     }
 
     printf("rhf76_incoming_data_process %d: %s\n", ret, incoming_data_buffer);
-    
+
     __asciistr2hex(incoming_data_buffer, hex_stream, strlen(incoming_data_buffer));
-    rhf76_mcps_indication(hex_stream, strlen(incoming_data_buffer)/2);
+
+    extern lora_module_t lora_module_rhf76;
+    if (lora_module_rhf76.recv_callback) {
+        lora_module_rhf76.recv_callback(hex_stream, strlen(incoming_data_buffer) / 2);
+    }
 }
 
 at_event_t rhf76_at_event[] = {
     { "+CMSGHEX: PORT:", rhf76_incoming_data_process },
+    { "+MSGHEX: PORT:", rhf76_incoming_data_process }
 };
-
-
 
 static char __num2hex(uint8_t num)
 {
@@ -318,7 +513,6 @@ static void __hex2str(uint8_t *in, char *out, int len)
 
 static int rhf76_send(const void *buf, size_t len)
 {
-
     char *str_buf = NULL;
 
     str_buf = tos_mmheap_calloc(2 * len + 1, sizeof(char));
@@ -326,24 +520,41 @@ static int rhf76_send(const void *buf, size_t len)
         return -1;
     }
     __hex2str((uint8_t *)buf, str_buf, len);
-    
+
     char cmd[100] = {0};
     at_echo_t echo;
+    snprintf(cmd, sizeof(cmd), RHF76_ATCMD_FMT_SEND_CMSGHEX, str_buf);
+    cmd[sizeof(cmd) - 1] = '\0';
+    tos_mmheap_free(str_buf);
+    tos_at_echo_create(&echo, NULL, 0, "+CMSGHEX: ACK Received");
+    tos_at_cmd_exec(&echo, 6000, cmd);
+    if (echo.status == AT_ECHO_STATUS_OK || echo.status == AT_ECHO_STATUS_EXPECT) {
+        return len;
+    }
+    return -1;
+}
+
+static int rhf76_send_unconfirmed(const void *buf, size_t len)
+{
+    char *str_buf = NULL;
+    at_echo_t echo;
+
+    str_buf = tos_mmheap_calloc(2 * len + 1, sizeof(char));
+    if (!str_buf) {
+        return -1;
+    }
+    __hex2str((uint8_t *)buf, str_buf, len);
+
+    char cmd[100] = {0};
     snprintf(cmd, sizeof(cmd), RHF76_ATCMD_FMT_SEND_MSGHEX, str_buf);
     cmd[sizeof(cmd) - 1] = '\0';
     tos_mmheap_free(str_buf);
-    tos_at_echo_create(&echo, NULL, 0, "+CMSG: ACK Received");    
+    tos_at_echo_create(&echo, NULL, 0, "+MSGHEX: Done");
     tos_at_cmd_exec(&echo, 6000, cmd);
     if (echo.status == AT_ECHO_STATUS_OK || echo.status == AT_ECHO_STATUS_EXPECT) {
-        return -1;
-    } 
-    return len;
-}
-
-static int rhf76_recv_register(void* mcps_indication)
-{
-    rhf76_mcps_indication = (mcps_indication_t)mcps_indication;
-    return 0;
+        return len;
+    }
+    return -1;
 }
 
 static int rhf76_close(void)
@@ -352,11 +563,13 @@ static int rhf76_close(void)
 }
 
 lora_module_t lora_module_rhf76 = {
-    .init           = rhf76_init,
-    .join           = rhf76_join,
-    .send           = rhf76_send,
-    .recv_register  = rhf76_recv_register,
-    .close          = rhf76_close
+    .init             = rhf76_init,
+    .join_otaa        = rhf76_join_otaa,
+    .join_abp         = rhf76_join_abp,
+    .send             = rhf76_send,
+    .send_unconfirmed = rhf76_send_unconfirmed,
+    .close            = rhf76_close,
+    .recv_callback    = K_NULL,
 };
 
 int rhf76_lora_init(hal_uart_port_t uart_port)
@@ -366,7 +579,7 @@ int rhf76_lora_init(hal_uart_port_t uart_port)
         return -1;
     }
 
-    at_delay_ms(1000);
+    tos_stopwatch_delay_ms(1000);
 
     if (tos_lora_module_register(&lora_module_rhf76) != 0) {
         return -1;
@@ -378,5 +591,4 @@ int rhf76_lora_init(hal_uart_port_t uart_port)
 
     return 0;
 }
-
 

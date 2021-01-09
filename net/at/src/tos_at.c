@@ -1,3 +1,20 @@
+/*----------------------------------------------------------------------------
+ * Tencent is pleased to support the open source community by making TencentOS
+ * available.
+ *
+ * Copyright (C) 2019 THL A29 Limited, a Tencent company. All rights reserved.
+ * If you have downloaded a copy of the TencentOS binary from Tencent, please
+ * note that the TencentOS binary is licensed under the BSD 3-Clause License.
+ *
+ * If you have downloaded a copy of the TencentOS source code from Tencent,
+ * please note that TencentOS source code is licensed under the BSD 3-Clause
+ * License, except for the third-party components listed below which are
+ * subject to different license terms. Your integration of TencentOS into your
+ * own projects may require compliance with the BSD 3-Clause License, as well
+ * as the other licenses applicable to the third-party components included
+ * within TencentOS.
+ *---------------------------------------------------------------------------*/
+
 #include "tos_at.h"
 
 __STATIC__ at_agent_t at_agent;
@@ -24,7 +41,7 @@ __STATIC__ int at_uart_getchar(uint8_t *data, k_tick_t timeout)
 {
     k_err_t err;
 
-    at_delay(1);
+    tos_stopwatch_delay(1);
 
     if (tos_sem_pend(&AT_AGENT->uart_rx_sem, timeout) != K_ERR_NONE) {
         return -1;
@@ -34,7 +51,7 @@ __STATIC__ int at_uart_getchar(uint8_t *data, k_tick_t timeout)
         return -1;
     }
 
-    err = tos_fifo_pop(&AT_AGENT->uart_rx_fifo, data);
+    err = tos_chr_fifo_pop(&AT_AGENT->uart_rx_fifo, data);
 
     tos_mutex_post(&AT_AGENT->uart_rx_lock);
 
@@ -161,6 +178,13 @@ __STATIC__ int at_is_echo_expect(void)
         return 0;
     }
 
+    if (at_echo->__is_fuzzy_match) {
+        if (strstr(recv_buffer, expect) != NULL) {
+            return 0;
+        }
+        return -1;
+    }
+
     if (strncmp(expect, recv_buffer, expect_len) == 0) {
         return 1;
     }
@@ -274,7 +298,7 @@ __STATIC__ void at_parser(void *arg)
         at_parse_status = at_uart_line_parse();
 
         if (at_parse_status == AT_PARSE_STATUS_OVERFLOW) {
-            // TODO: fix me
+            tos_kprintln("AT parse overflow!");
             continue;
         }
 
@@ -305,7 +329,7 @@ __STATIC__ void at_parser(void *arg)
             at_echo_buffer_copy(recv_cache, at_echo);
         }
 
-        printf("--->%s\n", recv_cache->buffer);
+        tos_kprintln("--->%s", recv_cache->buffer);
     }
 }
 
@@ -337,6 +361,28 @@ __API__ int tos_at_echo_create(at_echo_t *echo, char *buffer, size_t buffer_size
     echo->status            = AT_ECHO_STATUS_NONE;
     echo->__w_idx           = 0;
     echo->__is_expecting    = K_FALSE;
+    echo->__is_fuzzy_match  = K_FALSE;
+    return 0;
+}
+
+__API__ int tos_at_echo_fuzzy_matching_create(at_echo_t *echo, char *buffer, size_t buffer_size, char *echo_expect_contains)
+{
+    if (!echo) {
+        return -1;
+    }
+
+    if (buffer) {
+        memset(buffer, 0, buffer_size);
+    }
+
+    echo->buffer            = buffer;
+    echo->buffer_size       = buffer_size;
+    echo->echo_expect       = echo_expect_contains;
+    echo->line_num          = 0;
+    echo->status            = AT_ECHO_STATUS_NONE;
+    echo->__w_idx           = 0;
+    echo->__is_expecting    = K_FALSE;
+    echo->__is_fuzzy_match  = K_TRUE;
     return 0;
 }
 
@@ -347,7 +393,7 @@ __STATIC_INLINE__ void at_echo_flush(at_echo_t *echo)
     echo->__w_idx   = 0;
 }
 
-__STATIC_INLINE void at_echo_attach(at_echo_t *echo)
+__STATIC_INLINE__ void at_echo_attach(at_echo_t *echo)
 {
     at_echo_flush(echo);
     AT_AGENT->echo = echo;
@@ -549,7 +595,7 @@ __API__ int tos_at_channel_read(int channel_id, uint8_t *buffer, size_t buffer_l
             return total_read_len;
         }
 
-        read_len = tos_fifo_pop_stream(&data_channel->rx_fifo, buffer, buffer_len);
+        read_len = tos_chr_fifo_pop_stream(&data_channel->rx_fifo, buffer, buffer_len);
 
         tos_mutex_post(&data_channel->rx_lock);
 
@@ -576,9 +622,9 @@ __API__ int tos_at_channel_read_timed(int channel_id, uint8_t *buffer, size_t bu
 
     tick = tos_millisec2tick(timeout);
 
-    at_timer_countdown(&AT_AGENT->timer, tick);
-    while (!at_timer_is_expired(&AT_AGENT->timer)) {
-        remain_tick = at_timer_remain(&AT_AGENT->timer);
+    tos_stopwatch_countdown(&AT_AGENT->timer, tick);
+    while (!tos_stopwatch_is_expired(&AT_AGENT->timer)) {
+        remain_tick = tos_stopwatch_remain(&AT_AGENT->timer);
         if (remain_tick == (k_tick_t)0u) {
             return total_read_len;
         }
@@ -587,7 +633,7 @@ __API__ int tos_at_channel_read_timed(int channel_id, uint8_t *buffer, size_t bu
             return total_read_len;
         }
 
-        read_len = tos_fifo_pop_stream(&data_channel->rx_fifo, buffer + read_len, buffer_len - total_read_len);
+        read_len = tos_chr_fifo_pop_stream(&data_channel->rx_fifo, buffer + read_len, buffer_len - total_read_len);
 
         tos_mutex_post(&data_channel->rx_lock);
 
@@ -616,7 +662,7 @@ __API__ int tos_at_channel_write(int channel_id, uint8_t *buffer, size_t buffer_
         return -1;
     }
 
-    ret = tos_fifo_push_stream(&data_channel->rx_fifo, buffer, buffer_len);
+    ret = tos_chr_fifo_push_stream(&data_channel->rx_fifo, buffer, buffer_len);
 
     tos_mutex_post(&data_channel->rx_lock);
 
@@ -637,7 +683,7 @@ __STATIC_INLINE__ int at_channel_construct(at_data_channel_t *data_channel, cons
     }
 
     data_channel->rx_fifo_buffer = fifo_buffer;
-    tos_fifo_create(&data_channel->rx_fifo, fifo_buffer, AT_DATA_CHANNEL_FIFO_BUFFER_SIZE);
+    tos_chr_fifo_create(&data_channel->rx_fifo, fifo_buffer, AT_DATA_CHANNEL_FIFO_BUFFER_SIZE);
     data_channel->remote_ip = ip;
     data_channel->remote_port = port;
 
@@ -702,7 +748,7 @@ __API__ int tos_at_channel_free(int channel_id)
     tos_mutex_destroy(&data_channel->rx_lock);
 
     tos_mmheap_free(data_channel->rx_fifo_buffer);
-    tos_fifo_destroy(&data_channel->rx_fifo);
+    tos_chr_fifo_destroy(&data_channel->rx_fifo);
 
     memset(data_channel, 0, sizeof(at_data_channel_t));
 
@@ -793,7 +839,7 @@ __API__ int tos_at_init(hal_uart_port_t uart_port, at_event_t *event_table, size
 
     at_channel_init();
 
-    at_timer_init(&AT_AGENT->timer);
+    tos_stopwatch_create(&AT_AGENT->timer);
 
     buffer = tos_mmheap_alloc(AT_UART_RX_FIFO_BUFFER_SIZE);
     if (!buffer) {
@@ -801,7 +847,7 @@ __API__ int tos_at_init(hal_uart_port_t uart_port, at_event_t *event_table, size
     }
 
     AT_AGENT->uart_rx_fifo_buffer = (uint8_t *)buffer;
-    tos_fifo_create(&AT_AGENT->uart_rx_fifo, (uint8_t *)buffer, AT_UART_RX_FIFO_BUFFER_SIZE);
+    tos_chr_fifo_create(&AT_AGENT->uart_rx_fifo, buffer, AT_UART_RX_FIFO_BUFFER_SIZE);
 
     buffer = tos_mmheap_alloc(AT_CMD_BUFFER_SIZE);
     if (!buffer) {
@@ -873,7 +919,7 @@ errout1:
 errout0:
     tos_mmheap_free(AT_AGENT->uart_rx_fifo_buffer);
     AT_AGENT->uart_rx_fifo_buffer = K_NULL;
-    tos_fifo_destroy(&AT_AGENT->uart_rx_fifo);
+    tos_chr_fifo_destroy(&AT_AGENT->uart_rx_fifo);
 
     return -1;
 }
@@ -900,16 +946,18 @@ __API__ void tos_at_deinit(void)
     tos_mmheap_free(AT_AGENT->uart_rx_fifo_buffer);
     AT_AGENT->uart_rx_fifo_buffer = K_NULL;
 
-    tos_fifo_destroy(&AT_AGENT->uart_rx_fifo);
+    tos_chr_fifo_destroy(&AT_AGENT->uart_rx_fifo);
+
+    tos_stopwatch_destroy(&AT_AGENT->timer);
 
     at_channel_deinit();
 }
 
 /* To completely decouple the uart intterupt and at agent, we need a more powerful
    hal(driver framework), that would be a huge work, we place it in future plans. */
-__API__ void tos_at_uart_write_byte(uint8_t data)
+__API__ void tos_at_uart_input_byte(uint8_t data)
 {
-    if (tos_fifo_push(&AT_AGENT->uart_rx_fifo, data) == K_ERR_NONE) {
+    if (tos_chr_fifo_push(&AT_AGENT->uart_rx_fifo, data) == K_ERR_NONE) {
         tos_sem_post(&AT_AGENT->uart_rx_sem);
     }
 }

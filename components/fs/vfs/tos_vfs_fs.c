@@ -1,19 +1,32 @@
-#include "tos_vfs.h"
+/*----------------------------------------------------------------------------
+ * Tencent is pleased to support the open source community by making TencentOS
+ * available.
+ *
+ * Copyright (C) 2019 THL A29 Limited, a Tencent company. All rights reserved.
+ * If you have downloaded a copy of the TencentOS binary from Tencent, please
+ * note that the TencentOS binary is licensed under the BSD 3-Clause License.
+ *
+ * If you have downloaded a copy of the TencentOS source code from Tencent,
+ * please note that TencentOS source code is licensed under the BSD 3-Clause
+ * License, except for the third-party components listed below which are
+ * subject to different license terms. Your integration of TencentOS into your
+ * own projects may require compliance with the BSD 3-Clause License, as well
+ * as the other licenses applicable to the third-party components included
+ * within TencentOS.
+ *---------------------------------------------------------------------------*/
 
-#if TOS_CFG_VFS_EN > 0u
+#include "tos_vfs.h"
 
 extern k_list_t k_vfs_fsmap_list;
 TOS_LIST_DEFINE(k_vfs_fsmap_list);
 
 __STATIC__ vfs_fsmap_t *vfs_fsmap_get(const char *fs_name)
 {
-    k_list_t *curr;
     char *name = K_NULL;
     vfs_fsmap_t *fsmap = K_NULL;
 
-    TOS_LIST_FOR_EACH(curr, &k_vfs_fsmap_list) {
-        fsmap   = TOS_LIST_ENTRY(curr, vfs_fsmap_t, list);
-        name    = (char *)fsmap->name;
+    TOS_LIST_FOR_EACH_ENTRY(fsmap, vfs_fsmap_t, list, &k_vfs_fsmap_list) {
+        name = (char *)fsmap->name;
         if (strlen(name) == strlen(fs_name) &&
             strncmp(name, fs_name, strlen(name)) == 0) {
             return fsmap;
@@ -193,6 +206,4 @@ __API__ vfs_err_t tos_vfs_fs_mkfs(const char *device_path, const char *fs_name, 
 
     return VFS_ERR_NONE;
 }
-
-#endif /* TOS_CFG_VFS_EN */
 

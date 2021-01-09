@@ -1,6 +1,21 @@
-#include "tos_vfs.h"
+/*----------------------------------------------------------------------------
+ * Tencent is pleased to support the open source community by making TencentOS
+ * available.
+ *
+ * Copyright (C) 2019 THL A29 Limited, a Tencent company. All rights reserved.
+ * If you have downloaded a copy of the TencentOS binary from Tencent, please
+ * note that the TencentOS binary is licensed under the BSD 3-Clause License.
+ *
+ * If you have downloaded a copy of the TencentOS source code from Tencent,
+ * please note that TencentOS source code is licensed under the BSD 3-Clause
+ * License, except for the third-party components listed below which are
+ * subject to different license terms. Your integration of TencentOS into your
+ * own projects may require compliance with the BSD 3-Clause License, as well
+ * as the other licenses applicable to the third-party components included
+ * within TencentOS.
+ *---------------------------------------------------------------------------*/
 
-#if TOS_CFG_VFS_EN > 0u
+#include "tos_vfs.h"
 
 __STATIC__ TOS_LIST_DEFINE(k_vfs_inode_list);
 
@@ -20,15 +35,13 @@ __STATIC__ TOS_LIST_DEFINE(k_vfs_inode_list);
  */
 __STATIC__ vfs_inode_t *vfs_inode_search(const char *path, const char **relative_path)
 {
-    k_list_t *curr;
     char *name = K_NULL;
     int path_len, name_len;
     vfs_inode_t *inode = K_NULL;
 
     path_len = strlen(path);
 
-    TOS_LIST_FOR_EACH(curr, &k_vfs_inode_list) {
-        inode = TOS_LIST_ENTRY(curr, vfs_inode_t, list);
+    TOS_LIST_FOR_EACH_ENTRY(inode, vfs_inode_t, list, &k_vfs_inode_list) {
         name = (char *)inode->name;
         name_len = strlen(name);
 
@@ -89,20 +102,20 @@ __STATIC__ vfs_inode_t *vfs_inode_create(const char *name, int name_len)
     return inode;
 }
 
-__KERNEL__ void vfs_inode_free(vfs_inode_t *inode)
+__KNL__ void vfs_inode_free(vfs_inode_t *inode)
 {
     tos_list_del(&inode->list);
     tos_mmheap_free((void *)inode);
 }
 
-__KERNEL__ void vfs_inode_refinc(vfs_inode_t *inode)
+__KNL__ void vfs_inode_refinc(vfs_inode_t *inode)
 {
     if (inode->refs < VFS_INODE_REFS_MAX) {
         ++inode->refs;
     }
 }
 
-__KERNEL__ vfs_inode_t *vfs_inode_find(const char *path, const char **relative_path)
+__KNL__ vfs_inode_t *vfs_inode_find(const char *path, const char **relative_path)
 {
     vfs_inode_t *inode = K_NULL;
 
@@ -116,12 +129,12 @@ __KERNEL__ vfs_inode_t *vfs_inode_find(const char *path, const char **relative_p
     return inode;
 }
 
-__KERNEL__ int vfs_inode_is_busy(vfs_inode_t *inode)
+__KNL__ int vfs_inode_is_busy(vfs_inode_t *inode)
 {
     return inode->refs > 0;
 }
 
-__KERNEL__ vfs_inode_t *vfs_inode_alloc(const char *name)
+__KNL__ vfs_inode_t *vfs_inode_alloc(const char *name)
 {
     int name_len;
     vfs_inode_t *inode = K_NULL;
@@ -152,7 +165,7 @@ __STATIC__ void vfs_inode_refdec(vfs_inode_t *inode)
     }
 }
 
-__KERNEL__ void vfs_inode_release(vfs_inode_t *inode)
+__KNL__ void vfs_inode_release(vfs_inode_t *inode)
 {
     vfs_inode_refdec(inode);
 
@@ -160,6 +173,4 @@ __KERNEL__ void vfs_inode_release(vfs_inode_t *inode)
         vfs_inode_free(inode);
     }
 }
-
-#endif /* TOS_CFG_VFS_EN */
 

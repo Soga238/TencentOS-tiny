@@ -68,7 +68,7 @@ board: FRDM-KL25Z
 
 #include "fsl_smc.h"
 #include "clock_config.h"
-#include "tos.h"
+#include "tos_k.h"
 /*******************************************************************************
  * Definitions
  ******************************************************************************/
@@ -195,7 +195,7 @@ void BOARD_BootClockRUN(void)
                         &mcgConfig_BOARD_BootClockRUN.pll0Config);
     /* Configure the Internal Reference clock (MCGIRCLK). */
     CLOCK_SetInternalRefClkConfig(mcgConfig_BOARD_BootClockRUN.irclkEnableMode,
-                                  mcgConfig_BOARD_BootClockRUN.ircs, 
+                                  mcgConfig_BOARD_BootClockRUN.ircs,
                                   mcgConfig_BOARD_BootClockRUN.fcrdiv);
     /* Set the clock configuration in SIM module. */
     CLOCK_SetSimConfig(&simConfig_BOARD_BootClockRUN);
@@ -299,11 +299,11 @@ void BOARD_BootClockVLPR(void)
 
 void SysTick_Handler(void)
 {
-  if(tos_knl_is_running())					 //OS开始跑了,才执行正常的调度处理
+  if(tos_knl_is_running())
   {
-      tos_knl_irq_enter();					//进入中断
-      tos_tick_handler();       				//调用TencentOS tiny的时钟服务程序               
-      tos_knl_irq_leave();       	 			//触发任务切换软中断
+      tos_knl_irq_enter();
+      tos_tick_handler();
+      tos_knl_irq_leave();
   }
   /* USER CODE BEGIN SysTick_IRQn 1 */
 

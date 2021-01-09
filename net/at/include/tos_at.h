@@ -18,8 +18,7 @@
 #ifndef _TOS_AT_H_
 #define _TOS_AT_H_
 
-#include "tos.h"
-#include "tos_at_utils.h"
+#include "tos_k.h"
 #include "tos_hal.h"
 
 #define AT_AGENT_ECHO_OK            "OK"
@@ -74,7 +73,7 @@ typedef enum at_channel_status_en {
 
 typedef struct at_data_channel_st {
     uint8_t             is_free;
-    k_fifo_t            rx_fifo;
+    k_chr_fifo_t        rx_fifo;
     uint8_t            *rx_fifo_buffer;
     k_mutex_t           rx_lock;
 
@@ -93,6 +92,7 @@ typedef struct at_echo_st {
     size_t              __w_idx;
     int                 __is_expecting;
     k_sem_t             __expect_notify;
+    int                 __is_fuzzy_match;
 } at_echo_t;
 
 typedef void (*at_event_callback_t)(void);
@@ -105,27 +105,27 @@ typedef struct at_event_st {
 typedef struct at_agent_st {
     at_data_channel_t   data_channel[AT_DATA_CHANNEL_NUM];
 
-    at_event_t *event_table;
-    size_t      event_table_size;
+    at_event_t     *event_table;
+    size_t          event_table_size;
 
-    at_echo_t  *echo;
+    at_echo_t      *echo;
 
-    k_task_t    parser;
-    at_cache_t  recv_cache;
+    k_task_t        parser;
+    at_cache_t      recv_cache;
 
-    at_timer_t  timer;
+    k_stopwatch_t   timer;
 
-    k_mutex_t   global_lock;
+    k_mutex_t       global_lock;
 
-    char       *cmd_buf;
-    k_mutex_t   cmd_buf_lock;
+    char           *cmd_buf;
+    k_mutex_t       cmd_buf_lock;
 
-    hal_uart_t  uart;
-    k_mutex_t   uart_tx_lock;
-    k_mutex_t   uart_rx_lock;
-    k_sem_t     uart_rx_sem;
-    k_fifo_t    uart_rx_fifo;
-    uint8_t    *uart_rx_fifo_buffer;
+    hal_uart_t      uart;
+    k_mutex_t       uart_tx_lock;
+    k_mutex_t       uart_rx_lock;
+    k_sem_t         uart_rx_sem;
+    k_chr_fifo_t    uart_rx_fifo;
+    uint8_t        *uart_rx_fifo_buffer;
 } at_agent_t;
 
 #define AT_AGENT        ((at_agent_t *)(&at_agent))
@@ -144,7 +144,7 @@ typedef struct at_agent_st {
  * @retval  -1              write failed(error).
  * @retval  none -1         the number of bytes written.
  */
-int tos_at_channel_write(int channel_id, uint8_t *buffer, size_t buffer_len);
+__API__ int tos_at_channel_write(int channel_id, uint8_t *buffer, size_t buffer_len);
 
 /**
  * @brief Read data from a channel.
@@ -161,7 +161,7 @@ int tos_at_channel_write(int channel_id, uint8_t *buffer, size_t buffer_len);
  * @retval  -1              read failed(error).
  * @retval  none -1         the number of bytes read.
  */
-int tos_at_channel_read_timed(int channel_id, uint8_t *buffer, size_t buffer_len, uint32_t timeout);
+__API__ int tos_at_channel_read_timed(int channel_id, uint8_t *buffer, size_t buffer_len, uint32_t timeout);
 
 /**
  * @brief Read data from a channel.
@@ -177,7 +177,7 @@ int tos_at_channel_read_timed(int channel_id, uint8_t *buffer, size_t buffer_len
  * @retval  -1              read failed(error).
  * @retval  none -1         the number of bytes read.
  */
-int tos_at_channel_read(int channel_id, uint8_t *buffer, size_t buffer_len);
+__API__ int tos_at_channel_read(int channel_id, uint8_t *buffer, size_t buffer_len);
 
 /**
  * @brief Allocate a channel.
@@ -193,7 +193,7 @@ int tos_at_channel_read(int channel_id, uint8_t *buffer, size_t buffer_len);
  * @retval  -1              allocate failed(error).
  * @retval  none -1         the id of the channel.
  */
-int tos_at_channel_alloc_id(int channel_id, const char *ip, const char *port);
+__API__ int tos_at_channel_alloc_id(int channel_id, const char *ip, const char *port);
 
 /**
  * @brief Allocate a channel.
@@ -208,7 +208,7 @@ int tos_at_channel_alloc_id(int channel_id, const char *ip, const char *port);
  * @retval  -1              allocate failed(error).
  * @retval  none -1         the id of the channel.
  */
-int tos_at_channel_alloc(const char *ip, const char *port);
+__API__ int tos_at_channel_alloc(const char *ip, const char *port);
 
 /**
  * @brief Free a channel.
@@ -222,7 +222,7 @@ int tos_at_channel_alloc(const char *ip, const char *port);
  * @retval  -1              free failed(error).
  * @retval  0               free successfully.
  */
-int tos_at_channel_free(int channel_id);
+__API__ int tos_at_channel_free(int channel_id);
 
 /**
  * @brief Set channel broken.
@@ -261,16 +261,17 @@ __API__ int tos_at_channel_is_working(int channel_id);
  * @retval  -1              initialize failed(error).
  * @retval  0               initialize successfully.
  */
-int tos_at_init(hal_uart_port_t uart_port, at_event_t *event_table, size_t event_table_size);
+__API__ int tos_at_init(hal_uart_port_t uart_port, at_event_t *event_table, size_t event_table_size);
 
 /**
  * @brief De-initialize the at framework.
  *
  * @attention None
  *
- * @return  None
+ * @return
+None
  */
-void tos_at_deinit(void);
+__API__ void tos_at_deinit(void);
 
 /**
  * @brief Create a echo struct.
@@ -286,7 +287,23 @@ void tos_at_deinit(void);
  * @retval  -1              create failed(error).
  * @retval  0               create successfully.
  */
-int tos_at_echo_create(at_echo_t *echo, char *buffer, size_t buffer_size, char *echo_expect);
+__API__ int tos_at_echo_create(at_echo_t *echo, char *buffer, size_t buffer_size, char *echo_expect);
+
+/**
+ * @brief Create a echo struct with fuzzy matching for expected echo.
+ *
+ * @attention None
+ *
+ * @param[in]   echo                    pointer to the echo struct.
+ * @param[out]  buffer                  buffer to hold the received message from the module.
+ * @param[in]   buffer_size             size of the buffer.
+ * @param[in]   echo_expect_contains    if the echo message contains echo_expect_contains, it is a matching.
+ *
+ * @return  errcode
+ * @retval  -1              create failed(error).
+ * @retval  0               create successfully.
+ */
+__API__ int tos_at_echo_fuzzy_matching_create(at_echo_t *echo, char *buffer, size_t buffer_size, char *echo_expect_contains);
 
 /**
  * @brief Execute an at command.
@@ -301,7 +318,7 @@ int tos_at_echo_create(at_echo_t *echo, char *buffer, size_t buffer_size, char *
  * @retval  -1              execute failed(error).
  * @retval  0               execute successfully.
  */
-int tos_at_cmd_exec(at_echo_t *echo, uint32_t timeout, const char *cmd, ...);
+__API__ int tos_at_cmd_exec(at_echo_t *echo, uint32_t timeout, const char *cmd, ...);
 
 /**
  * @brief Execute an at command.
@@ -317,7 +334,7 @@ int tos_at_cmd_exec(at_echo_t *echo, uint32_t timeout, const char *cmd, ...);
  * @retval  -1              execute failed(error).
  * @retval  0               execute successfully.
  */
-int tos_at_cmd_exec_until(at_echo_t *echo, uint32_t timeout, const char *cmd, ...);
+__API__ int tos_at_cmd_exec_until(at_echo_t *echo, uint32_t timeout, const char *cmd, ...);
 
 /**
  * @brief Send raw data througth uart.
@@ -333,7 +350,7 @@ int tos_at_cmd_exec_until(at_echo_t *echo, uint32_t timeout, const char *cmd, ..
  * @retval  -1              execute failed(error).
  * @retval  0               execute successfully.
  */
-int tos_at_raw_data_send(at_echo_t *echo, uint32_t timeout, const uint8_t *buf, size_t size);
+__API__ int tos_at_raw_data_send(at_echo_t *echo, uint32_t timeout, const uint8_t *buf, size_t size);
 
 /**
  * @brief Send raw data througth uart.
@@ -350,7 +367,7 @@ int tos_at_raw_data_send(at_echo_t *echo, uint32_t timeout, const uint8_t *buf, 
  * @retval  -1              execute failed(error).
  * @retval  0               execute successfully.
  */
-int tos_at_raw_data_send_until(at_echo_t *echo, uint32_t timeout, const uint8_t *buf, size_t size);
+__API__ int tos_at_raw_data_send_until(at_echo_t *echo, uint32_t timeout, const uint8_t *buf, size_t size);
 
 /**
  * @brief Write byte to the at uart.
@@ -362,7 +379,7 @@ int tos_at_raw_data_send_until(at_echo_t *echo, uint32_t timeout, const uint8_t 
  *
  * @return  None
  */
-void tos_at_uart_write_byte(uint8_t data);
+__API__ void tos_at_uart_input_byte(uint8_t data);
 
 /**
  * @brief A global lock provided by at framework.
@@ -376,7 +393,7 @@ void tos_at_uart_write_byte(uint8_t data);
  * @retval  -1              pend failed(error).
  * @retval  0               pend successfully.
  */
-int tos_at_global_lock_pend(void);
+__API__ int tos_at_global_lock_pend(void);
 
 /**
  * @brief A global lock provided by at framework.
@@ -390,7 +407,7 @@ int tos_at_global_lock_pend(void);
  * @retval  -1              post failed(error).
  * @retval  0               post successfully.
  */
-int tos_at_global_lock_post(void);
+__API__ int tos_at_global_lock_post(void);
 
 /**
  * @brief Read data from the uart.
@@ -403,7 +420,7 @@ int tos_at_global_lock_post(void);
  *
  * @return  length of the data read from the uart.
  */
-int tos_at_uart_read(uint8_t *buffer, size_t buffer_len);
+__API__ int tos_at_uart_read(uint8_t *buffer, size_t buffer_len);
 
 /**
  * @brief Read data from the uart.
@@ -416,7 +433,7 @@ int tos_at_uart_read(uint8_t *buffer, size_t buffer_len);
  *
  * @return  length of the data read from the uart.
  */
-int tos_at_uart_readline(uint8_t *buffer, size_t buffer_len);
+__API__ int tos_at_uart_readline(uint8_t *buffer, size_t buffer_len);
 
 /**
  * @brief Read data from the uart.
@@ -429,7 +446,7 @@ int tos_at_uart_readline(uint8_t *buffer, size_t buffer_len);
  *
  * @return  length of the data read from the uart.
  */
-int tos_at_uart_drain(uint8_t *buffer, size_t buffer_len);
+__API__ int tos_at_uart_drain(uint8_t *buffer, size_t buffer_len);
 
 /**
  * @brief Get the remote ip of a channel.
@@ -441,7 +458,7 @@ int tos_at_uart_drain(uint8_t *buffer, size_t buffer_len);
  *
  * @return  remote ip of the channel.
  */
-const char *tos_at_agent_channel_ip_get(int channel_id);
+__API__ const char *tos_at_agent_channel_ip_get(int channel_id);
 
 /**
  * @brief Get the remote port of a channel.
@@ -453,7 +470,7 @@ const char *tos_at_agent_channel_ip_get(int channel_id);
  *
  * @return  remote port of the channel.
  */
-const char *tos_at_agent_channel_port_get(int channel_id);
+__API__ const char *tos_at_agent_channel_port_get(int channel_id);
 
-#endif /* __AT_AGENT_H_ */
+#endif /* _TOS_AT_H_ */
 

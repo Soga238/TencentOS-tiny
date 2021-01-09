@@ -21,7 +21,7 @@
  * Version 1.02
  *    Control functions for short timeouts in microsecond resolution:
  *    Added: osKernelSysTick, osKernelSysTickFrequency, osKernelSysTickMicroSec
- *    Removed: osSignalGet 
+ *    Removed: osSignalGet
  *----------------------------------------------------------------------------
  *
  * Copyright (c) 2013 ARM LIMITED
@@ -151,7 +151,7 @@ used throughout the whole project.
 
 #include <stdint.h>
 #include <stddef.h>
-#include "tos.h"
+#include "tos_k.h"
 
 #ifdef  __cplusplus
 extern "C" {
@@ -239,20 +239,18 @@ typedef k_sem_t *osSemaphoreId;
 
 /// Pool ID identifies the memory pool (pointer to a memory pool control block).
 /// \note CAN BE CHANGED: \b os_pool_cb is implementation specific in every CMSIS-RTOS.
-#if TOS_CFG_MMBLK_EN > 0u
 typedef k_mmblk_pool_t *osPoolId;
-#endif
 
 /// Message ID identifies the message queue (pointer to a message queue control block).
 /// \note CAN BE CHANGED: \b os_messageQ_cb is implementation specific in every CMSIS-RTOS.
-#if TOS_CFG_QUEUE_EN > 0u
-typedef k_queue_t *osMessageQId;
+#if TOS_CFG_MESSAGE_QUEUE_EN > 0u
+typedef k_msg_q_t *osMessageQId;
 #endif
 
 /// Mail ID identifies the mail queue (pointer to a mail queue control block).
 /// \note CAN BE CHANGED: \b os_mailQ_cb is implementation specific in every CMSIS-RTOS.
-#if TOS_CFG_QUEUE_EN > 0u
-typedef k_queue_t *osMailQId;
+#if TOS_CFG_MAIL_QUEUE_EN > 0u
+typedef k_mail_q_t *osMailQId;
 #endif
 
 /// Thread Definition structure contains startup information of a thread.
@@ -297,36 +295,38 @@ typedef struct os_semaphore_def {
 
 /// Definition structure for memory block allocation.
 /// \note CAN BE CHANGED: \b os_pool_def is implementation specific in every CMSIS-RTOS.
-#if TOS_CFG_MMBLK_EN > 0u
 typedef struct os_pool_def {
     uint32_t                    pool_sz;    ///< number of items (elements) in the pool
     uint32_t                    item_sz;    ///< size of an item
     void                       *pool;       ///< pointer to memory for pool
     k_mmblk_pool_t             *mmblk_pool; ///< memory blk pool handler
 } osPoolDef_t;
-#endif
 
 /// Definition structure for message queue.
 /// \note CAN BE CHANGED: \b os_messageQ_def is implementation specific in every CMSIS-RTOS.
-#if TOS_CFG_QUEUE_EN > 0u
+#if TOS_CFG_MESSAGE_QUEUE_EN > 0u
 typedef struct os_messageQ_def {
     uint32_t                    queue_sz;   ///< number of elements in the queue
     uint32_t                    item_sz;    ///< size of an item
     void                       *pool;       ///< memory array for messages
-    k_queue_t                  *queue;      ///< queue handler
+    k_msg_q_t                  *queue;      ///< queue handler
 } osMessageQDef_t;
+#endif // TOS_CFG_MESSAGE_QUEUE_EN
 
 /// Definition structure for mail queue.
 /// \note CAN BE CHANGED: \b os_mailQ_def is implementation specific in every CMSIS-RTOS.
+#if TOS_CFG_MAIL_QUEUE_EN > 0u
 typedef struct os_mailQ_def {
     uint32_t                    queue_sz;   ///< number of elements in the queue
     uint32_t                    item_sz;    ///< size of an item
     void                       *pool;       ///< memory array for mail
 } osMailQDef_t;
+#endif // TOS_CFG_MAIL_QUEUE_EN
 
 /// Event structure contains detailed information about an event.
 /// \note MUST REMAIN UNCHANGED: \b os_event shall be consistent in every CMSIS-RTOS.
 ///       However the struct may be extended at the end.
+#if (TOS_CFG_MAIL_QUEUE_EN > 0u) || (TOS_CFG_MESSAGE_QUEUE_EN > 0u)
 typedef struct {
     osStatus                    status;     ///< status code: event or error information
     union  {
@@ -335,12 +335,16 @@ typedef struct {
         int32_t                 signals;    ///< signal flags
     } value;                                ///< event value
     union  {
+#if TOS_CFG_MAIL_QUEUE_EN > 0u
         osMailQId               mail_id;    ///< mail id obtained by \ref osMailCreate
+#endif
+#if TOS_CFG_MESSAGE_QUEUE_EN > 0u
         osMessageQId            message_id; ///< message id obtained by \ref osMessageCreate
+#endif
     } def;                                  ///< event definition
 } osEvent;
+#endif
 
-#endif // TOS_CFG_QUEUE_EN
 
 //  ==== Kernel Control Functions ====
 
@@ -361,9 +365,9 @@ int32_t osKernelRunning(void);
 
 #if (defined (osFeature_SysTick) && (osFeature_SysTick != 0))     // System Timer available
 
-/// Get the RTOS kernel system timer counter 
+/// Get the RTOS kernel system timer counter
 /// \note MUST REMAIN UNCHANGED: \b osKernelSysTick shall be consistent in every CMSIS-RTOS.
-/// \return RTOS kernel system timer as 32-bit value 
+/// \return RTOS kernel system timer as 32-bit value
 uint32_t osKernelSysTick(void);
 
 /// The RTOS kernel system timer frequency in Hz
@@ -390,12 +394,21 @@ uint32_t osKernelSysTick(void);
 #define osThreadDef(name, priority, instances, stacksz)  \
     extern const osThreadDef_t os_thread_def_##name
 #else                            // define the object
+
 #define osThreadDef(name, priority, instances, stacksz)  \
     k_task_t task_handler_##name; \
     k_stack_t task_stack_##name[(stacksz)]; \
     const osThreadDef_t os_thread_def_##name = \
         { #name, (os_pthread)(name), (osPriority)(priority), (instances), \
         (&((task_stack_##name)[0])), (stacksz), ((k_timeslice_t)0u), (&(task_handler_##name)) }
+
+#if (TOS_CFG_TASK_DYNAMIC_CREATE_EN > 0u)
+#define osThreadDynamicDef(name, priority, instances, stacksz) \
+    const osThreadDef_t os_thread_def_##name = \
+        { #name, (os_pthread)(name), (osPriority)(priority), (instances), \
+        (K_NULL), (stacksz), ((k_timeslice_t)0u), (K_NULL) }
+#endif
+
 #endif
 
 /// Access a Thread definition.
@@ -513,7 +526,7 @@ osStatus osTimerDelete(osTimerId timer_id);
 
 #endif // TOS_CFG_TIMER_EN
 
-#if TOS_CFG_QUEUE_EN > 0u
+#if TOS_CFG_MESSAGE_QUEUE_EN > 0u
 //  ==== Signal Management ====
 
 /// Set the specified Signal Flags of an active thread.
@@ -537,7 +550,7 @@ int32_t osSignalClear(osThreadId thread_id, int32_t signals);
 /// \note MUST REMAIN UNCHANGED: \b osSignalWait shall be consistent in every CMSIS-RTOS.
 osEvent osSignalWait(int32_t signals, uint32_t millisec);
 
-#endif // TOS_CFG_QUEUE_EN
+#endif // TOS_CFG_MESSAGE_QUEUE_EN
 
 #if TOS_CFG_MUTEX_EN > 0u
 //  ==== Mutex Management ====
@@ -643,7 +656,6 @@ osStatus osSemaphoreDelete(osSemaphoreId semaphore_id);
 #endif // Semaphore available
 #endif // TOS_CFG_SEM_EN
 
-#if TOS_CFG_MMBLK_EN > 0u
 //  ==== Memory Pool Management Functions ====
 
 #if (defined (osFeature_Pool) && (osFeature_Pool != 0))  // Memory Pool Management available
@@ -698,9 +710,8 @@ void *osPoolCAlloc(osPoolId pool_id);
 osStatus osPoolFree(osPoolId pool_id, void *block);
 
 #endif // Memory Pool Management available
-#endif // TOS_CFG_MMBLK_EN
 
-#if TOS_CFG_QUEUE_EN > 0u
+#if TOS_CFG_MESSAGE_QUEUE_EN > 0u
 //  ==== Message Queue Management Functions ====
 
 #if (defined (osFeature_MessageQ) && (osFeature_MessageQ != 0))     // Message Queues available
@@ -716,9 +727,10 @@ osStatus osPoolFree(osPoolId pool_id, void *block);
     extern const osMessageQDef_t os_messageQ_def_##name
 #else                            // define the object
 #define osMessageQDef(name, queue_sz, type)   \
-    k_queue_t queue_handler_##name; \
+    k_msg_q_t msg_q_handler_##name; \
+    uint8_t msg_q_pool[queue_sz*sizeof(type)]; \
     const osMessageQDef_t os_messageQ_def_##name = \
-        { (queue_sz), sizeof(type), NULL, (&(queue_handler_##name)) }
+        { (queue_sz), sizeof(type), msg_q_pool, (&(msg_q_handler_##name)) }
 #endif
 
 /// \brief Access a Message Queue Definition.
@@ -751,8 +763,9 @@ osStatus osMessagePut(osMessageQId queue_id, uint32_t info, uint32_t millisec);
 osEvent osMessageGet(osMessageQId queue_id, uint32_t millisec);
 
 #endif // Message Queues available
+#endif
 
-
+#if TOS_CFG_MAIL_QUEUE_EN > 0u
 //  ==== Mail Queue Management Functions ====
 
 #if (defined (osFeature_MailQ) && (osFeature_MailQ != 0))     // Mail Queues available
@@ -822,7 +835,7 @@ osEvent osMailGet(osMailQId queue_id, uint32_t millisec);
 osStatus osMailFree(osMailQId queue_id, void *mail);
 
 #endif // Mail Queues available
-#endif // TOS_CFG_QUEUE_EN
+#endif // TOS_CFG_MAIL_QUEUE_EN
 
 
 #ifdef  __cplusplus
